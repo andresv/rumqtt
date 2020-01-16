@@ -116,12 +116,25 @@ pub mod stream {
             match (self.client_cert.clone(), self.client_private_key.clone()) {
                 (Some(cert), Some(key)) => {
                     let mut cert = BufReader::new(Cursor::new(cert));
-                    let mut keys = BufReader::new(Cursor::new(key));
 
                     let certs = pemfile::certs(&mut cert)
                                         .map_err(|()| ConnectError::ParseClientCertError)?;
+
+                    // pemfile:: functions do not actually return error if some random file is used as key
+                    // those functions just return Ok() with an empty vec,
+                    // incase of actual error return here also empty vec
+                    // lets test which key is actually used:
+                    let mut keys = BufReader::new(Cursor::new(key.clone()));
                     let keys = pemfile::rsa_private_keys(&mut keys)
-                                        .map_err(|()| ConnectError::ParseClientKeyError)?;
+                                        .unwrap_or(vec![]);
+
+                    let keys = if keys.len() >= 1 {
+                        keys
+                    } else {
+                        let mut keys = BufReader::new(Cursor::new(key.clone()));
+                        pemfile::pkcs8_private_keys(&mut keys)
+                                .unwrap_or(vec![])
+                    };
 
                     let key = if keys.len() >= 1 {
                         keys[0].clone()
